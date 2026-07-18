@@ -40,7 +40,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             className="text-lg font-bold tracking-tight"
             style={{ color: "var(--sidebar-fg-active)" }}
           >
-            KUN HRMS
+            Suki HRMS
           </h1>
           <p
             className="text-xs mt-0.5"
@@ -72,7 +72,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             opacity: 0.5,
           }}
         >
-          &copy; {new Date().getFullYear()} KUN HRMS
+          &copy; {new Date().getFullYear()} Suki HRMS
         </div>
       </aside>
     </>

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KUN HRMS",
+  title: "Suki HRMS",
   description: "Human Resource Management System",
 };
 

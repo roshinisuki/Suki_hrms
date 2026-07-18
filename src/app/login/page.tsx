@@ -46,7 +46,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-lg shadow-md p-8">
           <h1 className="text-2xl font-bold text-center text-gray-900 mb-2">
-            KUN HRMS
+            Suki HRMS
           </h1>
           <p className="text-center text-gray-500 text-sm mb-6">
             Sign in to your account
@@ -68,7 +68,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@kun.hrms"
+                placeholder="admin@suki.hrms"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 autoComplete="email"
               />
@@ -97,7 +97,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center text-xs text-gray-400">
-            <p>Test credentials: admin@kun.hrms / admin123</p>
+            <p>Test credentials: admin@suki.hrms / admin123</p>
             <p className="mt-1">Run POST /api/auth/seed-user to create</p>
           </div>
         </div>

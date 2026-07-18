@@ -1,73 +1,64 @@
 /**
- * Next.js Edge middleware — JWT verification + RBAC route protection.
+ * Next.js Edge middleware — JWT verification + route protection.
  *
  * Uses jose (Edge-compatible) for token verification.
- * Routes under /api/protected/* require a valid JWT + specific permission.
  *
- * Permission mapping is defined in PROTECTED_ROUTES below.
- * To add more protected routes, add entries there — do NOT extend beyond
- * the test route until Checkpoint 3 is approved.
+ * Protected route groups:
+ * - /api/protected/*  — existing test route (JWT + permission in handler)
+ * - /api/masters/*    — master setup API routes (JWT here, permission in handler)
+ * - /masters/*        — master setup UI pages (JWT check, redirect to / if no token)
+ *
+ * Permission DB checks happen in route handlers (Node runtime),
+ * not in middleware (Edge runtime can't access Prisma).
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { verifyTokenJose } from '@/lib/jwt';
 
-interface RoutePermission {
-  pattern: string;
-  method: string;
-  permission: {
-    module: string;
-    submodule?: string;
-    page?: string;
-    action: string;
-  };
-}
-
-// Only the test route is protected for now (Checkpoint 3 scope)
-const PROTECTED_ROUTES: RoutePermission[] = [
-  {
-    pattern: '/api/protected/test',
-    method: 'GET',
-    permission: {
-      module: 'system',
-      submodule: 'test',
-      page: 'demo',
-      action: 'view',
-    },
-  },
-];
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const method = request.method.toUpperCase();
 
-  // Find matching protected route
-  const route = PROTECTED_ROUTES.find(
-    (r) => pathname === r.pattern && method === r.method
-  );
+  // Check if this is a protected route
+  const isApiRoute = pathname.startsWith('/api/protected/') || pathname.startsWith('/api/masters/');
+  const isUiRoute = pathname.startsWith('/masters/');
 
-  if (!route) {
+  if (!isApiRoute && !isUiRoute) {
     return NextResponse.next();
   }
 
-  // Extract token from Authorization header
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json(
-      { error: 'Missing or invalid Authorization header' },
-      { status: 401 }
-    );
+  // Extract token — API routes use Authorization header, UI routes use cookie
+  let token: string | null = null;
+
+  if (isApiRoute) {
+    const authHeader = request.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+  } else if (isUiRoute) {
+    token = request.cookies.get('hrms-token')?.value ?? null;
   }
 
-  const token = authHeader.substring(7);
+  if (!token) {
+    if (isApiRoute) {
+      return NextResponse.json(
+        { error: 'Missing or invalid Authorization header' },
+        { status: 401 }
+      );
+    }
+    // UI route — redirect to login
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
 
   // Verify token (jose — Edge compatible)
   const payload = await verifyTokenJose(token);
   if (!payload) {
-    return NextResponse.json(
-      { error: 'Invalid or expired token' },
-      { status: 401 }
-    );
+    if (isApiRoute) {
+      return NextResponse.json(
+        { error: 'Invalid or expired token' },
+        { status: 401 }
+      );
+    }
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // Add user info to request headers for downstream route handlers
@@ -76,15 +67,15 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set('x-role-id', String(payload.roleId));
   requestHeaders.set('x-role-code', payload.roleCode);
 
-  // Note: Permission DB check happens in the route handler (Node runtime),
-  // not in middleware (Edge runtime can't access Prisma).
-  // Middleware only verifies the token is valid.
-
   return NextResponse.next({
     request: { headers: requestHeaders },
   });
 }
 
 export const config = {
-  matcher: ['/api/protected/:path*'],
+  matcher: [
+    '/api/protected/:path*',
+    '/api/masters/:path*',
+    '/masters/:path*',
+  ],
 };

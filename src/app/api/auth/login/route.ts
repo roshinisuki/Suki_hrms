@@ -1,49 +1,80 @@
 /**
  * POST /api/auth/login
- * Body: { username: string, password: string, role?: "admin" | "viewer" }
- * Returns: { token: string, role: string } if credentials valid
+ * Body: { email: string, password: string }
+ * Returns: { user: { id, email, roleCode } } + sets httpOnly cookie
  *
- * NOTE: This is a skeleton. For now, it accepts any username/password.
- * The `role` param selects which role to assume for testing RBAC.
- * Real authentication (against an Employee/User table) is out of scope.
+ * Validates credentials against the User table (bcrypt compare).
+ * On success, issues JWT and sets "hrms-token" httpOnly cookie.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { signTokenNode } from '@/lib/jwt';
+import bcrypt from 'bcryptjs';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { username, password, role: requestedRole } = body;
+  const { email, password } = body;
 
-  if (!username || !password) {
+  if (!email || !password) {
     return NextResponse.json(
-      { error: 'username and password are required' },
+      { error: 'Email and password are required' },
       { status: 400 }
     );
   }
 
-  const roleCode = requestedRole === 'viewer' ? 'viewer' : 'admin';
-
-  // Find or create the requested role
-  const role = await prisma.role.upsert({
-    where: { code: roleCode },
-    update: {},
-    create: {
-      code: roleCode,
-      name: roleCode === 'admin' ? 'Administrator' : 'View-Only Tester',
-      description: roleCode === 'admin'
-        ? 'Full access to all master tables'
-        : 'View access to all master tables, no edit',
+  // Find user by email — only active, non-deleted
+  const user = await prisma.user.findFirst({
+    where: {
+      email,
+      isActive: true,
+      deletedAt: null,
+    },
+    include: {
+      role: { select: { id: true, code: true } },
     },
   });
 
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Invalid credentials' },
+      { status: 401 }
+    );
+  }
+
+  // Compare password
+  const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+  if (!passwordMatch) {
+    return NextResponse.json(
+      { error: 'Invalid credentials' },
+      { status: 401 }
+    );
+  }
+
   // Issue JWT (jsonwebtoken — Node runtime)
   const token = signTokenNode({
-    userId: 1, // skeleton — no User table yet
-    roleId: role.id,
-    roleCode: role.code,
+    userId: user.id,
+    roleId: user.role.id,
+    roleCode: user.role.code,
   });
 
-  return NextResponse.json({ token, role: role.code });
+  // Create response with user info
+  const response = NextResponse.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      roleCode: user.role.code,
+    },
+  });
+
+  // Set httpOnly cookie
+  response.cookies.set('hrms-token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24, // 24 hours
+  });
+
+  return response;
 }

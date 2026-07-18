@@ -6,12 +6,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { checkMasterPermission } from '@/lib/rbac-masters';
 import { departmentSchema } from '@/lib/validations/master';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const permErr = await checkMasterPermission(request);
+  if (permErr) return permErr;
   const { id } = await params;
   const record = await prisma.department.findFirst({
     where: { id: parseInt(id), deletedAt: null },
@@ -28,6 +31,8 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const permErr = await checkMasterPermission(request);
+  if (permErr) return permErr;
   const { id } = await params;
   const body = await request.json();
   const parsed = departmentSchema.safeParse(body);
@@ -59,9 +64,11 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const permErr = await checkMasterPermission(request);
+  if (permErr) return permErr;
   const { id } = await params;
   await prisma.department.update({
     where: { id: parseInt(id) },

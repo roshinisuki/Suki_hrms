@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { checkMasterPermission } from '@/lib/rbac-masters';
 import { otPlanSchema } from '@/lib/validations/master';
 
 export async function GET(request: NextRequest) {
+  const permErr = await checkMasterPermission(request);
+  if (permErr) return permErr;
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get('page') ?? '1');
   const limit = parseInt(searchParams.get('limit') ?? '20');
@@ -22,6 +25,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const permErr = await checkMasterPermission(request);
+  if (permErr) return permErr;
   const body = await request.json();
   const parsed = otPlanSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 });

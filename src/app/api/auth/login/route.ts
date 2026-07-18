@@ -1,12 +1,11 @@
 /**
  * POST /api/auth/login
- * Body: { username: string, password: string }
- * Returns: { token: string } if credentials valid
+ * Body: { username: string, password: string, role?: "admin" | "viewer" }
+ * Returns: { token: string, role: string } if credentials valid
  *
- * NOTE: This is a skeleton. For now, it accepts any username/password
- * and creates/looks up a Role called "admin" with all permissions.
- * Real authentication (against an Employee/User table) is out of scope
- * for this branch — that's a future task.
+ * NOTE: This is a skeleton. For now, it accepts any username/password.
+ * The `role` param selects which role to assume for testing RBAC.
+ * Real authentication (against an Employee/User table) is out of scope.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,7 +14,7 @@ import { signTokenNode } from '@/lib/jwt';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { username, password } = body;
+  const { username, password, role: requestedRole } = body;
 
   if (!username || !password) {
     return NextResponse.json(
@@ -24,41 +23,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // SKELETON: No User table yet. Accept any credentials.
-  // Create or find an "admin" role for the demo.
+  const roleCode = requestedRole === 'viewer' ? 'viewer' : 'admin';
+
+  // Find or create the requested role
   const role = await prisma.role.upsert({
-    where: { code: 'admin' },
+    where: { code: roleCode },
     update: {},
     create: {
-      code: 'admin',
-      name: 'Administrator',
-      description: 'Skeleton admin role for RBAC demo',
-    },
-  });
-
-  // Create or find the test permission
-  const permission = await prisma.permission.upsert({
-    where: { code: 'system.test.demo.view' },
-    update: {},
-    create: {
-      code: 'system.test.demo.view',
-      module: 'system',
-      submodule: 'test',
-      page: 'demo',
-      action: 'view',
-      description: 'Test permission for RBAC skeleton demo',
-    },
-  });
-
-  // Grant the permission to the role if not already
-  await prisma.rolePermission.upsert({
-    where: {
-      roleId_permissionId: { roleId: role.id, permissionId: permission.id },
-    },
-    update: {},
-    create: {
-      roleId: role.id,
-      permissionId: permission.id,
+      code: roleCode,
+      name: roleCode === 'admin' ? 'Administrator' : 'View-Only Tester',
+      description: roleCode === 'admin'
+        ? 'Full access to all master tables'
+        : 'View access to all master tables, no edit',
     },
   });
 

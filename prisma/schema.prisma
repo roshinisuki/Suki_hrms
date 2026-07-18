@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // KUN HRMS — Prisma Schema
 // Datasource: MS SQL Server (production)
-// Branch: feature/prisma-base
+// Branch: feature/prisma-base + feature/employee-master-models
 //
 // SCOPE: Base master/definition tables + soft-delete. No transactional logic.
 // Do NOT add Attendance, Payroll, Performance, Training, Recruitment, Reports,
@@ -53,6 +53,7 @@ model Department {
   updatedAt   DateTime  @updatedAt
 
   subDepartments SubDepartment[]
+  jobInfos       JobInfo[]
 
   @@map("Department")
 }
@@ -69,6 +70,7 @@ model SubDepartment {
   updatedAt    DateTime  @updatedAt
 
   department Department @relation(fields: [departmentId], references: [id])
+  jobInfos    JobInfo[]     @relation("SubDepartmentJobInfos")
 
   @@index([departmentId])
   @@map("SubDepartment")
@@ -84,6 +86,8 @@ model Designation {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  jobInfos JobInfo[]
+
   @@map("Designation")
 }
 
@@ -97,6 +101,8 @@ model EmployeeType {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  jobInfos JobInfo[]
+
   @@map("EmployeeType")
 }
 
@@ -109,6 +115,8 @@ model Category {
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  jobInfos JobInfo[]
 
   @@map("Category")
 }
@@ -143,6 +151,8 @@ model Unit {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  jobInfos JobInfo[]
+
   @@map("Unit")
 }
 
@@ -157,6 +167,8 @@ model Grade {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  jobInfos JobInfo[]
+
   @@map("Grade")
 }
 
@@ -170,6 +182,8 @@ model Level {
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  jobInfos JobInfo[]
 
   @@map("Level")
 }
@@ -270,6 +284,7 @@ model ShiftMaster {
   updatedAt    DateTime  @updatedAt
 
   shiftPlans ShiftPlan[]
+  jobInfos    JobInfo[]
 
   @@map("ShiftMaster")
 }
@@ -292,6 +307,7 @@ model ShiftPlan {
   updatedAt     DateTime  @updatedAt
 
   shiftMaster ShiftMaster @relation(fields: [shiftMasterId], references: [id])
+  jobInfos    JobInfo[]    @relation("ShiftPlanJobInfos")
 
   @@index([shiftMasterId])
   @@map("ShiftPlan")
@@ -376,6 +392,8 @@ model AssetMaster {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  assetAllocations EmployeeAssetAllocation[]
+
   @@map("AssetMaster")
 }
 
@@ -430,4 +448,344 @@ model RolePermission {
   @@unique([roleId, permissionId])
   @@index([permissionId])
   @@map("RolePermission")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. EMPLOYEE MASTER (feature/employee-master-models)
+//
+//    Employee is the core record. Related data is split into sub-tables
+//    (PersonalDetails, JobInfo, SalaryStructure, Dependents, Experience,
+//    Education, Documents, ExitInterview) — each FKs back to Employee.
+//
+//    JobInfo FKs into the already-merged Org structure tables:
+//      Department, SubDepartment, Designation, EmployeeType, Category,
+//      Grade, Level, Unit, ShiftMaster, ShiftPlan
+//
+//    Asset allocation is a read-only reference via EmployeeAssetAllocation
+//    join table → AssetMaster. No asset data duplicated on Employee.
+//
+//    OPEN QUESTIONS (Employee Master):
+//      E1. Employee code format — auto-generated or manual? Pattern?
+//          DRAFTED: manual entry, NVarChar(20), unique.
+//      E2. Should Employee have a status enum (active/on-leave/terminated/resigned)?
+//          DRAFTED: Yes — status String with NVarChar(20) for flexibility.
+//          Future: constrain via DropdownMaster or enum.
+//      E3. Multiple JobInfo records (history) or single current record?
+//          DRAFTED: Multiple — JobInfo has effectiveFrom/effectiveTo for
+//          job history tracking. Only one record with effectiveTo = NULL
+//          at a time (current job info).
+//      E4. SalaryStructure — single current CTC or versioned history?
+//          DRAFTED: Versioned — effectiveFrom/effectiveTo, same pattern
+//          as slab tables. Only one active record at a time.
+//      E5. Documents — one row per document type or a generic documents table?
+//          DRAFTED: One row per document type with typed fields for
+//          Aadhaar/PAN/Passport/DL + expiry tracking. Generic document
+//          uploads via separate Document table for other files.
+//      E6. KPI/JD attachment — separate table or fields on Employee?
+//          DRAFTED: Separate EmployeeDocument table with docType =
+//          "kpi" | "jd" | "other". Placeholder only — no UI beyond stub.
+//      E7. ExitInterview — on Employee or separate?
+//          DRAFTED: Separate model, 1:1 with Employee, created on exit.
+//      E8. Reporting manager — self-referential FK on Employee?
+//          DRAFTED: Yes — reportingManagerId Int? self-FK on Employee.
+//      E9. Bank details — on Employee or separate table?
+//          DRAFTED: Separate EmployeeBankDetail (1:1) — multiple bank
+//          accounts may be needed in future.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// E1: Manual code entry for now. Auto-generation pattern TBD.
+model Employee {
+  id                 Int       @id @default(autoincrement())
+  employeeCode       String    @unique @db.NVarChar(20)
+  firstName          String    @db.NVarChar(100)
+  middleName         String?   @db.NVarChar(100)
+  lastName           String    @db.NVarChar(100)
+  // E2: Status as flexible string — constrain via DropdownMaster later
+  status             String    @default("active") @db.NVarChar(20) // active | on-leave | terminated | resigned
+  // E8: Self-referential FK for reporting manager
+  reportingManagerId Int?
+
+  isActive           Boolean   @default(true)
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Self-referential relation for reporting manager
+  // NoAction required to break cyclic cascade through child tables
+  reportingManager   Employee?  @relation("EmployeeToManager", fields: [reportingManagerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  directReports      Employee[] @relation("EmployeeToManager")
+
+  // 1:1 relations
+  personalDetails    PersonalDetails?
+  bankDetail         EmployeeBankDetail?
+  exitInterview      ExitInterview?
+
+  // 1:N relations (versioned tables are 1:N, not 1:1)
+  jobInfos           JobInfo[]
+  salaryStructures   SalaryStructure[]
+  dependents         EmployeeDependent[]
+  experiences        EmployeeExperience[]
+  educations         EmployeeEducation[]
+  documents          EmployeeDocument[]
+  assetAllocations   EmployeeAssetAllocation[]
+
+  @@index([reportingManagerId])
+  @@index([status])
+  @@map("Employee")
+}
+
+// Personal details — 1:1 with Employee
+model PersonalDetails {
+  id             Int       @id @default(autoincrement())
+  employeeId     Int       @unique
+  dateOfBirth    DateTime?
+  gender         String?   @db.NVarChar(20)   // via DropdownMaster
+  bloodGroup     String?   @db.NVarChar(10)   // via DropdownMaster
+  maritalStatus  String?   @db.NVarChar(20)   // via DropdownMaster
+  nationality    String?   @db.NVarChar(50)
+  religion       String?   @db.NVarChar(50)
+  category       String?   @db.NVarChar(50)   // via DropdownMaster (general category)
+  physicallyChallenged Boolean @default(false)
+  // Contact
+  personalEmail  String?   @db.NVarChar(100)
+  mobileNumber   String?   @db.NVarChar(20)
+  alternatePhone String?   @db.NVarChar(20)
+  // Address
+  presentAddress String?   @db.NVarChar(500)
+  permanentAddress String? @db.NVarChar(500)
+  // Emergency contact
+  emergencyContactName  String? @db.NVarChar(100)
+  emergencyContactPhone String? @db.NVarChar(20)
+  emergencyContactRelation String? @db.NVarChar(50)
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  employee       Employee  @relation(fields: [employeeId], references: [id])
+
+  @@map("PersonalDetails")
+}
+
+// E3: JobInfo is versioned — effectiveFrom/effectiveTo for job history.
+//     Only one record with effectiveTo = NULL = current job info.
+//     FKs into existing Org structure tables — no redefinition.
+model JobInfo {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int
+  // FKs into merged Org tables
+  departmentId    Int
+  subDepartmentId Int?
+  designationId   Int
+  employeeTypeId  Int
+  categoryId      Int?
+  gradeId         Int?
+  levelId         Int?
+  unitId          Int?
+  shiftMasterId   Int?
+  shiftPlanId     Int?
+  // Job details
+  jobTitle        String?   @db.NVarChar(100)
+  joinDate        DateTime
+  confirmationDate DateTime?
+  probationEndDate DateTime?
+  // Versioning
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?  // NULL = current
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee       @relation(fields: [employeeId], references: [id])
+  department      Department     @relation(fields: [departmentId], references: [id])
+  subDepartment   SubDepartment? @relation("SubDepartmentJobInfos", fields: [subDepartmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  designation     Designation    @relation(fields: [designationId], references: [id])
+  employeeType    EmployeeType   @relation(fields: [employeeTypeId], references: [id])
+  category        Category?      @relation(fields: [categoryId], references: [id])
+  grade           Grade?         @relation(fields: [gradeId], references: [id])
+  level           Level?         @relation(fields: [levelId], references: [id])
+  unit            Unit?          @relation(fields: [unitId], references: [id])
+  shiftMaster     ShiftMaster?   @relation(fields: [shiftMasterId], references: [id])
+  shiftPlan       ShiftPlan?     @relation("ShiftPlanJobInfos", fields: [shiftPlanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([employeeId])
+  @@index([departmentId])
+  @@index([designationId])
+  @@index([effectiveFrom, effectiveTo])
+  @@map("JobInfo")
+}
+
+// E4: SalaryStructure is versioned — effectiveFrom/effectiveTo.
+//     Only one active record at a time. CTC breakdown fields.
+model SalaryStructure {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int
+  // CTC breakdown
+  basic           Decimal   @db.Decimal(18, 2)
+  hra             Decimal   @db.Decimal(18, 2)
+  conveyanceAllowance Decimal @db.Decimal(18, 2) @default(0)
+  medicalAllowance     Decimal @db.Decimal(18, 2) @default(0)
+  specialAllowance     Decimal @db.Decimal(18, 2) @default(0)
+  otherAllowance       Decimal @db.Decimal(18, 2) @default(0)
+  // Statutory
+  pfApplicable    Boolean   @default(true)
+  esiApplicable   Boolean   @default(false)
+  // Totals
+  monthlyCtc      Decimal   @db.Decimal(18, 2)
+  annualCtc       Decimal   @db.Decimal(18, 2)
+  // Versioning
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?  // NULL = current
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@index([effectiveFrom, effectiveTo])
+  @@map("SalaryStructure")
+}
+
+// E9: Separate bank detail table — 1:1 for now, may extend to multiple.
+model EmployeeBankDetail {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int       @unique
+  bankName        String?   @db.NVarChar(100)
+  branchName      String?   @db.NVarChar(100)
+  accountNumber   String?   @db.NVarChar(30)
+  ifscCode        String?   @db.NVarChar(20)
+  accountType     String?   @db.NVarChar(20)  // savings | current | salary
+  isPrimary       Boolean   @default(true)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@map("EmployeeBankDetail")
+}
+
+// Dependents — 1:N with Employee
+model EmployeeDependent {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int
+  name            String    @db.NVarChar(100)
+  relationship    String    @db.NVarChar(50)   // spouse | son | daughter | father | mother | other
+  dateOfBirth     DateTime?
+  isDependent     Boolean   @default(true)     // for insurance/tax purposes
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("EmployeeDependent")
+}
+
+// Previous work experience — 1:N with Employee
+model EmployeeExperience {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int
+  companyName     String    @db.NVarChar(100)
+  designation     String    @db.NVarChar(100)
+  fromDate        DateTime
+  toDate          DateTime?  // NULL = current job
+  reasonForLeaving String?  @db.NVarChar(500)
+  lastDrawnSalary Decimal?  @db.Decimal(18, 2)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("EmployeeExperience")
+}
+
+// Education qualifications — 1:N with Employee
+model EmployeeEducation {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int
+  qualification   String    @db.NVarChar(100)   // e.g. "B.Tech", "MCA"
+  institution     String?   @db.NVarChar(200)
+  university      String?   @db.NVarChar(200)
+  yearOfPassing   Int?
+  percentage      Decimal?  @db.Decimal(5, 2)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("EmployeeEducation")
+}
+
+// E5: Documents with expiry tracking for Aadhaar/PAN/Passport/DL.
+//     Also handles KPI/JD attachments via docType field (E6).
+//     File upload is a placeholder stub — no actual file storage in this branch.
+model EmployeeDocument {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int
+  docType         String    @db.NVarChar(30)
+  // "aadhaar" | "pan" | "passport" | "driving_license" | "kpi" | "jd" | "other"
+  docNumber       String?   @db.NVarChar(50)    // e.g. Aadhaar number, PAN number
+  fileName        String?   @db.NVarChar(200)   // placeholder — actual file path/URL later
+  filePath        String?   @db.NVarChar(500)   // placeholder — actual file storage later
+  // Expiry tracking
+  issuedDate      DateTime?
+  expiryDate      DateTime?                     // NULL = no expiry
+  isVerified      Boolean   @default(false)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@index([docType])
+  @@index([expiryDate])
+  @@map("EmployeeDocument")
+}
+
+// Asset allocation — join table between Employee and AssetMaster.
+// Single-source-of-truth: no asset data duplicated on Employee.
+// Read-only reference — actual asset management logic is a future phase.
+model EmployeeAssetAllocation {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int
+  assetMasterId   Int
+  allocatedDate   DateTime  @default(now())
+  returnedDate    DateTime?  // NULL = currently allocated
+  notes           String?   @db.NVarChar(500)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee     @relation(fields: [employeeId], references: [id])
+  assetMaster     AssetMaster  @relation(fields: [assetMasterId], references: [id])
+
+  @@index([employeeId])
+  @@index([assetMasterId])
+  @@map("EmployeeAssetAllocation")
+}
+
+// E7: Exit interview — 1:1 with Employee, created on exit.
+model ExitInterview {
+  id              Int       @id @default(autoincrement())
+  employeeId      Int       @unique
+  exitDate        DateTime
+  exitReason      String?   @db.NVarChar(500)
+  exitType        String    @db.NVarChar(20)   // resignation | termination | retirement
+  interviewNotes  String?   @db.NVarChar(2000)
+  interviewDate   DateTime?
+  interviewedBy   String?   @db.NVarChar(100)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@map("ExitInterview")
 }

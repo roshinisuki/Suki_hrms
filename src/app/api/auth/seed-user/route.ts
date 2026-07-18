@@ -2,7 +2,7 @@
  * POST /api/auth/seed-user
  *
  * Creates a test admin user for login testing.
- * Email: admin@kun.hrms  Password: admin123
+ * Email: admin@suki.hrms  Password: admin123
  *
  * Also ensures the "admin" role exists.
  * Safe to call multiple times — uses upsert.
@@ -29,10 +29,10 @@ export async function POST() {
 
   // 3. Upsert the admin user
   const user = await prisma.user.upsert({
-    where: { email: 'admin@kun.hrms' },
+    where: { email: 'admin@suki.hrms' },
     update: {},
     create: {
-      email: 'admin@kun.hrms',
+      email: 'admin@suki.hrms',
       passwordHash,
       roleId: role.id,
       isActive: true,
@@ -48,7 +48,7 @@ export async function POST() {
       roleCode: role.code,
     },
     credentials: {
-      email: 'admin@kun.hrms',
+      email: 'admin@suki.hrms',
       password: 'admin123',
     },
   });

@@ -1,6 +1,6 @@
-# KUN HRMS — feature/prisma-base Branch Worklog
+# Suki HRMS — feature/prisma-base Branch Worklog
 
-**Project:** KUN HRMS (Suki HRMS)
+**Project:** Suki HRMS
 **Branch:** `feature/prisma-base` (branched from `dev`)
 **Date:** July 17, 2026
 **Repository:** https://github.com/roshinisuki/Suki_hrms.git

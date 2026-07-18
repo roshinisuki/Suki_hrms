@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- KUN HRMS — Slab/Rate Overlap Prevention Triggers (Q5 — Option D approved)
+-- Suki HRMS — Slab/Rate Overlap Prevention Triggers (Q5 — Option D approved)
 --
 -- Prevents overlapping (effectiveFrom, effectiveTo) date ranges for the same
 -- `code` within each slab/rate table. Rolls back the INSERT/UPDATE if an

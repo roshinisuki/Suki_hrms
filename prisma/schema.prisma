@@ -1,0 +1,433 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// KUN HRMS — Prisma Schema
+// Datasource: MS SQL Server (production)
+// Branch: feature/prisma-base
+//
+// SCOPE: Base master/definition tables + soft-delete. No transactional logic.
+// Do NOT add Attendance, Payroll, Performance, Training, Recruitment, Reports,
+// Compliance, Leave/Loan/Asset logic, or ESS models here.
+//
+// OPEN QUESTIONS STATUS:
+//   Q1. Grade & Level separate              → APPROVED
+//   Q2. ESI/PF two tables                   → APPROVED
+//   Q3. Site/Branch discriminator           → PENDING CLIENT CONFIRMATION (Site model commented out, will NOT migrate)
+//   Q4. isActive + deletedAt                → APPROVED
+//   Q5. Slab overlap prevention             → APPROVED: Option D (SQL Server trigger + app-layer validation)
+//   Q6. SubDepartment → Department FK       → APPROVED
+//   Q7. Int autoincrement                   → APPROVED
+//   Q8. ShiftPlan override shape            → APPROVED (spec override fields before Phase 2)
+//   Q9. OTPlan shape                        → APPROVED
+//   Q10. DropdownMaster isActive             → ALREADY PRESENT (was a summary-table omission, not a schema gap)
+//   Q11. Leave/Loan/Asset minimal fields    → APPROVED
+//
+// Q5 IMPLEMENTATION (Option D — approved):
+//   DB-level overlap prevention via SQL Server AFTER INSERT/UPDATE triggers
+//   on all 4 slab/rate tables (TDSSlab, ProfessionalTaxSlab, EsiRate, PfRate).
+//   Trigger checks no overlapping (effectiveFrom, effectiveTo) ranges exist
+//   for the same `code`, rolls back on conflict. App-layer validation in
+//   service code provides clean error messages before hitting the DB.
+//   Trigger SQL is in: prisma/triggers/slab_overlap_triggers.sql
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. ORGANISATIONAL MASTER TABLES (soft-delete: isActive + deletedAt)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Department {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  subDepartments SubDepartment[]
+
+  @@map("Department")
+}
+
+model SubDepartment {
+  id           Int       @id @default(autoincrement())
+  departmentId Int
+  code         String    @unique @db.NVarChar(20)
+  name         String    @db.NVarChar(100)
+  description  String?   @db.NVarChar(500)
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@index([departmentId])
+  @@map("SubDepartment")
+}
+
+model Designation {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("Designation")
+}
+
+model EmployeeType {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("EmployeeType")
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("Category")
+}
+
+// Q3: PENDING CLIENT CONFIRMATION — Site model commented out, will NOT migrate.
+//     If "Site" needs factory-license-number / legal-entity / registration
+//     fields that a generic "Branch" does not, this must be split into two
+//     models before migration. Uncomment or split once client confirms.
+// model Site {
+//   id         Int       @id @default(autoincrement())
+//   code       String    @unique @db.NVarChar(20)
+//   name       String    @db.NVarChar(100)
+//   branchType String    @db.NVarChar(20) // "site" | "branch"
+//   address    String?   @db.NVarChar(500)
+//   city       String?   @db.NVarChar(100)
+//   state      String?   @db.NVarChar(100)
+//   isActive   Boolean   @default(true)
+//   deletedAt  DateTime?
+//   createdAt  DateTime  @default(now())
+//   updatedAt  DateTime  @updatedAt
+//
+//   @@map("Site")
+// }
+
+model Unit {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("Unit")
+}
+
+// Q1: Drafted as separate table from Level.
+model Grade {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("Grade")
+}
+
+// Q1: Drafted as separate table from Grade.
+model Level {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("Level")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. STATUTORY SLAB / RATE TABLES (versioned: effectiveFrom / effectiveTo)
+//    effectiveTo IS NULL → currently active version.
+//    Overlap prevention: SQL Server AFTER INSERT/UPDATE triggers (Option D).
+//    See prisma/triggers/slab_overlap_triggers.sql
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TDSSlab {
+  id            Int       @id @default(autoincrement())
+  code          String    @db.NVarChar(20)
+  minSalary     Decimal   @db.Decimal(18, 2)
+  maxSalary     Decimal?  @db.Decimal(18, 2) // NULL = no upper limit
+  ratePercent   Decimal   @db.Decimal(5, 2)  // e.g. 5.00, 10.00, 20.00
+  effectiveFrom DateTime
+  effectiveTo   DateTime? // NULL = currently active
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([code])
+  @@map("TDSSlab")
+}
+
+model ProfessionalTaxSlab {
+  id            Int       @id @default(autoincrement())
+  code          String    @db.NVarChar(20)
+  minSalary     Decimal   @db.Decimal(18, 2)
+  maxSalary     Decimal?  @db.Decimal(18, 2) // NULL = no upper limit
+  monthlyAmount Decimal   @db.Decimal(18, 2) // fixed monthly PT amount
+  effectiveFrom DateTime
+  effectiveTo   DateTime? // NULL = currently active
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([code])
+  @@map("ProfessionalTaxSlab")
+}
+
+// Q2: Drafted as two separate tables (EsiRate, PfRate).
+model EsiRate {
+  id                       Int       @id @default(autoincrement())
+  code                     String    @db.NVarChar(20)
+  employeeContributionRate Decimal   @db.Decimal(5, 2)  // e.g. 0.75
+  employerContributionRate Decimal   @db.Decimal(5, 2)  // e.g. 3.25
+  wageCeilingMonthly       Decimal   @db.Decimal(18, 2) // max monthly wage for ESI applicability
+  effectiveFrom            DateTime
+  effectiveTo              DateTime? // NULL = currently active
+  isActive                 Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([code])
+  @@map("EsiRate")
+}
+
+// Q2: Drafted as two separate tables (EsiRate, PfRate).
+model PfRate {
+  id                       Int       @id @default(autoincrement())
+  code                     String    @db.NVarChar(20)
+  employeeContributionRate Decimal   @db.Decimal(5, 2)  // e.g. 12.00
+  employerContributionRate Decimal   @db.Decimal(5, 2)  // e.g. 12.00 (or 3.67 + 8.33 EPS)
+  pensionContributionRate  Decimal?  @db.Decimal(5, 2)  // EPS share, e.g. 8.33
+  wageCeilingMonthly       Decimal   @db.Decimal(18, 2) // max monthly wage for PF applicability
+  effectiveFrom            DateTime
+  effectiveTo              DateTime? // NULL = currently active
+  isActive                 Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([code])
+  @@map("PfRate")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. SHIFT & OVERTIME DEFINITION TABLES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ShiftMaster {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique @db.NVarChar(20)
+  name         String    @db.NVarChar(100)
+  startTime    String    @db.NVarChar(8)  // "09:00" (HH:mm)
+  endTime      String    @db.NVarChar(8)  // "18:00" (HH:mm)
+  graceMinutes Int       @default(0)
+  description  String?   @db.NVarChar(500)
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  shiftPlans ShiftPlan[]
+
+  @@map("ShiftMaster")
+}
+
+// Q8: APPROVED shape — named plan + FK to ShiftMaster + optional overrides.
+//     TODO BEFORE PHASE 2 (Attendance): spec out exactly which fields an
+//     override can touch (startTime, endTime, graceMinutes, breakDuration?).
+//     Attendance must not guess at override semantics it wasn't designed against.
+model ShiftPlan {
+  id            Int       @id @default(autoincrement())
+  shiftMasterId Int
+  code          String    @unique @db.NVarChar(20)
+  name          String    @db.NVarChar(100)
+  startTime     String?   @db.NVarChar(8)  // override ShiftMaster if set
+  endTime       String?   @db.NVarChar(8)  // override ShiftMaster if set
+  description   String?   @db.NVarChar(500)
+  isActive      Boolean   @default(true)
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  shiftMaster ShiftMaster @relation(fields: [shiftMasterId], references: [id])
+
+  @@index([shiftMasterId])
+  @@map("ShiftPlan")
+}
+
+// Q9: Drafted as OT rate definition. Confirm shape.
+model OTPlan {
+  id                     Int       @id @default(autoincrement())
+  code                   String    @unique @db.NVarChar(20)
+  name                   String    @db.NVarChar(100)
+  otRateMultiplier       Decimal   @db.Decimal(5, 2)  // e.g. 1.50, 2.00
+  applicableAfterMinutes Int       @default(0)        // OT kicks in after N minutes
+  maxOtHoursPerDay       Int?      // NULL = no cap
+  description            String?   @db.NVarChar(500)
+  isActive               Boolean   @default(true)
+  deletedAt              DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@map("OTPlan")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. GENERIC DROPDOWN MASTER
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Q10: Drafted with category grouping + label/value + sortOrder.
+model DropdownMaster {
+  id         Int       @id @default(autoincrement())
+  category   String    @db.NVarChar(50)  // grouping key, e.g. "gender", "blood_group"
+  label      String    @db.NVarChar(100) // display text
+  value      String    @db.NVarChar(100) // stored value
+  sortOrder  Int       @default(0)
+  isActive   Boolean   @default(true)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([category, value])
+  @@index([category])
+  @@map("DropdownMaster")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. LEAVE / LOAN / ASSET — DEFINITION TABLES (no logic)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Q11: Drafted with minimal definition fields. Confirm if flags needed.
+model LeaveMaster {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("LeaveMaster")
+}
+
+model LoanType {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("LoanType")
+}
+
+model AssetMaster {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("AssetMaster")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. AUTH + RBAC SKELETON
+//    (feature/auth-rbac branch — included here so schema is complete)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(20)
+  name        String    @db.NVarChar(100)
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@map("Role")
+}
+
+model Permission {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.NVarChar(50) // e.g. "employee.view", "payroll.run"
+  module      String    @db.NVarChar(50)         // top-level module, e.g. "employee"
+  submodule   String?   @db.NVarChar(50)         // sub-module, e.g. "profile"
+  page        String?   @db.NVarChar(50)         // page-level, e.g. "list"
+  action      String    @db.NVarChar(20)         // "view" | "create" | "edit" | "delete" | "export"
+  description String?   @db.NVarChar(500)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([module, submodule, page])
+  @@map("Permission")
+}
+
+model RolePermission {
+  id           Int      @id @default(autoincrement())
+  roleId       Int
+  permissionId Int
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("RolePermission")
+}

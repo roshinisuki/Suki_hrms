@@ -413,6 +413,7 @@ model Role {
   updatedAt   DateTime  @updatedAt
 
   rolePermissions RolePermission[]
+  users           User[]
 
   @@map("Role")
 }
@@ -448,6 +449,28 @@ model RolePermission {
   @@unique([roleId, permissionId])
   @@index([permissionId])
   @@map("RolePermission")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6b. USERS (feature/auth-login)
+//    Login credentials + role assignment. FK to Role.
+//    Soft-delete pattern (isActive + deletedAt) — same as all other tables.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique @db.NVarChar(100)
+  passwordHash String    @db.NVarChar(255)
+  roleId       Int
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  role         Role      @relation(fields: [roleId], references: [id])
+
+  @@index([roleId])
+  @@map("User")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
